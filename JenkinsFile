@@ -1,0 +1,41 @@
+pipeline {
+    // 1. Set the primary agent for the whole pipeline (controller, or a neutral agent)
+    // You can use 'none' here if every stage defines its own agent.
+    agent none 
+
+    stages {
+        stage('Parallel Agent Tests') {
+            // 2. Use the 'parallel' block to define concurrent execution
+            parallel {
+                
+                // --- Branch 1: Ubuntu Agent ---
+                stage('Test Ubuntu Agent') {
+                    // 3. Define the specific agent for this branch
+                    agent { label 'ubuntu-agent' } 
+                    steps {
+                        echo "--- Starting Ubuntu Agent Test ---"
+                        sh 'echo "Running on Ubuntu agent: $(hostname)"'
+                        sh 'java -version' 
+                        sh 'pwd'
+                        sh 'ls -la'
+                        echo "--- Ubuntu Agent Test Finished ---"
+                    }
+                }
+
+                // --- Branch 2: RHEL Agent ---
+                stage('Test RHEL Agent') {
+                    // 3. Define the specific agent for this branch
+                    agent { label 'rhel-agent' } 
+                    steps {
+                        echo "--- Starting RHEL Agent Test ---"
+                        sh 'echo "Running on RHEL agent: $(hostname)"'
+                        sh 'java -version' 
+                        sh 'pwd'
+                        sh 'ls -la'
+                        echo "--- RHEL Agent Test Finished ---"
+                    }
+                }
+            }
+        }
+    }
+}
