@@ -1,0 +1,23 @@
+# docker/docker-compose.yml
+services:
+  ubuntu-agent:
+    build:
+      context: ./ubuntu-agent
+      # dockerfile: dockerFile
+    image: ubuntu-agent:latest
+    container_name: ubuntu-agent
+    volumes:
+      - ../:/workspace:rw
+    tty: true
+    stdin_open: true
+
+  rhel-agent:
+    build:
+      context: ./alma-agent
+      # dockerfile: dockerFile
+    image: rhel-agent:latest
+    container_name: rhel-agent
+    volumes:
+      - ../:/workspace:rw
+    tty: true
+    stdin_open: true

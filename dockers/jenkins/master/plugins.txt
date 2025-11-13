@@ -1,0 +1,7 @@
+git
+workflow-aggregator
+credentials
+credentials-binding
+ssh-slaves
+docker-plugin
+docker-workflow
