@@ -94,7 +94,7 @@ pipeline {
                                 
                                 # Copy source file and spec file
                                 cp nids-config.sh ~/rpmbuild/SOURCES/
-                                cp package/SPECS/nids-config.spec ~/rpmbuild/SPECS/
+                                cp dockers/alma-agent/nids-config.spec ~/rpmbuild/SPECS/
                                 
                                 # Build the package
                                 echo "3. Building .rpm package..."
