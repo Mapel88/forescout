@@ -1,97 +1,133 @@
-// Jenkinsfile
 pipeline {
-    agent none // Start on the Jenkins controller
+    agent none 
 
     options {
-        // Keeps a few build artifacts (like the packages)
-        skipDefaultCheckout() // We'll manage checkout explicitly
+        skipDefaultCheckout()
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
     
     stages {
-        stage('Prepare Workspace and Get Code') {
-            agent any
-            steps {
-                // Check out the code, including the script and package metadata
-                checkout scm
-                
-                // Ensure the script is executable
-                sh 'chmod +x nids-config.sh'
-                
-                // Create the necessary directory structure for packaging (host-agnostic)
-                sh 'mkdir -p package/DEBIAN'
-                sh 'mkdir -p package/SPECS'
-                
-                echo "Workspace prepared."
-            }
-        }
         
-        stage('Build Packages in Parallel') {
+        stage('Build & Validate Packages in Parallel') {
+            // This parallel block launches only two agents concurrently.
             parallel {
                 
                 // ----------------------------------------------
-                // 📦 Branch 1: Build Debian (.deb) Package
+                // 🚀 Branch 1: Ubuntu (Build, Stash, Validate)
                 // ----------------------------------------------
-                stage('Build Debian Package (Ubuntu Agent)') {
-                    agent { label 'ubuntu-agent' } // Uses the Docker agent based on Ubuntu
+                stage('Ubuntu: Build and Validate DEB') {
+                    agent { label 'ubuntu-agent' } // Agent launched once
                     steps {
                         script {
-                            echo "Starting Debian packaging on Ubuntu agent..."
+                            checkout scm
+                            echo "--- Starting Ubuntu Agent Workflow ---"
                             
-                            // 1. 
+                            // CONSOLIDATED SHELL BLOCK 1: Setup and Build
                             sh '''
-                                # Install required tools
-                                apt-get update && apt-get install -y dpkg-dev fakeroot
+                                # Make script executable and install packaging tools
+                                chmod +x nids-config.sh
+                                sudo apt-get update
+                                sudo apt-get install -y dpkg-dev fakeroot
                                 
-                                # Create temporary directory structure
+                                # Prepare the Debian installation structure
+                                echo "2. Creating Debian package structure..."
                                 mkdir -p build-deb/usr/sbin
                                 mkdir -p build-deb/DEBIAN
-
-                                # Copy files to the temporary structure
-                                cp nids-config.sh build-deb/usr/sbin/nids-config
-
-                                # Copy the control file
-                                cp package/DEBIAN/control build-deb/DEBIAN/
-
-                                # Create the package
-                                fakeroot dpkg-deb --build build-deb
                                 
-                                # Rename the package   
+                                # Copy files (nids-config is renamed on install)
+                                cp nids-config.sh build-deb/usr/sbin/nids-config
+                                cp package/DEBIAN/control build-deb/DEBIAN/
+                                
+                                # Build the package using fakeroot for correct permissions
+                                echo "3. Building .deb package..."
+                                fakeroot dpkg-deb --build build-deb
                                 mv build-deb.deb nids-config_1.0.0_all.deb
                             '''
-                        
+                            
+                            // Groovy steps to share the package across the pipeline
+                            stash name: 'deb_package', includes: 'nids-config_1.0.0_all.deb'
                             archiveArtifacts artifacts: 'nids-config_1.0.0_all.deb', fingerprint: true
                             
-                            echo "Debian package built and archived."
+                            // CONSOLIDATED SHELL BLOCK 2: Validation
+                            sh '''
+                                echo "4. Validating package installation and execution..."
+                                
+                                # Install the package (sudo required for dpkg -i)
+                                sudo dpkg -i nids-config_1.0.0_all.deb
+                                
+                                # Execute the script (now installed in /usr/sbin) in automated mode:
+                                # IPV6 Mode 1 (Enable privacy), IPv4 Forward 1 (Enable)
+                                sudo nids-config 1 1
+                                
+                                # Verify the configuration change
+                                if [ $(sysctl -n net.ipv4.ip_forward) -eq 1 ]; then
+                                    echo "Validation SUCCESS: IPv4 Forwarding is 1."
+                                else
+                                    echo "Validation FAILED: IPv4 Forwarding is not 1."
+                                    exit 1
+                                fi
+                            '''
+                            echo "--- Ubuntu Agent Workflow Finished ---"
                         }
                     }
                 }
                 
                 // ----------------------------------------------
-                // 📦 Branch 2: Build RPM (.rpm) Package
+                // 🚀 Branch 2: RHEL (Build, Stash, Validate)
                 // ----------------------------------------------
-                stage('Build RPM Package (RHEL Agent)') {
-                    agent { label 'rhel-agent' } // Uses the Docker agent based on RHEL 9.6
+                stage('RHEL: Build and Validate RPM') {
+                    agent { label 'rhel-agent' } // Agent launched once
                     steps {
                         script {
-                            echo "Starting RPM packaging on RHEL agent..."
+                            checkout scm
+                            echo "--- Starting RHEL Agent Workflow ---"
                             
-                            // sh '''
-                            //     # Install required tools
-                            //     sudo dnf install -y rpm-build
-                            //     # Setup RPM structure in home directory
-                            //     sudo rpmdev-setuptree
-                            //     # Copy source file and spec file
-                            //     cp nids-config.sh ~/rpmbuild/SOURCES/
-                            //     cp package/SPECS/nids-config.spec ~/rpmbuild/SPECS/
-                            //     # Build the package
-                            //     rpmbuild -ba ~/rpmbuild/SPECS/nids-config.spec
-                            //     find ~/rpmbuild/RPMS -name "*.rpm" -exec cp {} . \\;
-                            // '''
+                            // CONSOLIDATED SHELL BLOCK 3: Setup and Build
+                            sh '''
+                                # Make script executable and install packaging tools
+                                chmod +x nids-config.sh
+                                sudo dnf install -y rpm-build
+                                
+                                # Setup RPM directory structure
+                                echo "2. Creating RPM package structure..."
+                                rpmdev-setuptree 
+                                
+                                # Copy source file and spec file
+                                cp nids-config.sh ~/rpmbuild/SOURCES/
+                                cp package/SPECS/nids-config.spec ~/rpmbuild/SPECS/
+                                
+                                # Build the package
+                                echo "3. Building .rpm package..."
+                                rpmbuild -ba ~/rpmbuild/SPECS/nids-config.spec
+                                
+                                # Find the built RPM file and copy it to the current directory
+                                find ~/rpmbuild/RPMS -name "*.rpm" -exec cp {} . \\;
+                            '''
                             
-                            // archiveArtifacts artifacts: '*.rpm', fingerprint: true
+                            // Groovy steps to share the package across the pipeline
+                            stash name: 'rpm_package', includes: '*.rpm'
+                            archiveArtifacts artifacts: '*.rpm', fingerprint: true
                             
-                            echo "RPM package built and archived."
+                            // CONSOLIDATED SHELL BLOCK 4: Validation
+                            sh '''
+                                echo "4. Validating package installation and execution..."
+                                
+                                # Install the package (sudo required for dnf install)
+                                sudo dnf install -y *.rpm
+                                
+                                # Execute the script (now installed in /usr/sbin) in automated mode:
+                                # IPV6 Mode 2 (Prefer privacy), IPv4 Forward 0 (Disable)
+                                sudo nids-config 2 0
+                                
+                                # Verify the configuration change
+                                if [ $(sysctl -n net.ipv6.conf.all.use_tempaddr) -eq 2 ]; then
+                                    echo "Validation SUCCESS: IPv6 Mode is 2."
+                                else
+                                    echo "Validation FAILED: IPv6 Mode is not 2."
+                                    exit 1
+                                fi
+                            '''
+                            echo "--- RHEL Agent Workflow Finished ---"
                         }
                     }
                 }
@@ -99,51 +135,28 @@ pipeline {
         }
         
         // ----------------------------------------------
-        // 🧪 Optional: Validation Stage
+        // 📢 Optional Stage: Cross-Validation (Demonstrates Stash/Unstash across distributions)
         // ----------------------------------------------
-        stage('Run Validation Test') {
-            parallel {
-                stage('Validate Debian Install') {
-                    agent { label 'ubuntu-agent' }
-                    steps {
-                        // Assuming you retrieve the artifact here, or rebuild it
-                        // For simplicity, we'll assume the artifact is in the current dir for testing:
-                        sh '''
-                            echo "Testing package installation on Ubuntu..."
-                            sudo dpkg -i nids-config_1.0.0_all.deb
-                            
-                            # Execute the script in automated mode (IPV6 Mode 1, IPv4 Forward 1)
-                            sudo nids-config 1 1
-                            
-                            # Verify configuration
-                            if [ $(sysctl -n net.ipv4.ip_forward) -eq 1 ]; then
-                                echo "Validation SUCCESS: IPv4 Forwarding is 1."
-                            else
-                                error "Validation FAILED: IPv4 Forwarding is not 1."
-                            fi
-                        '''
-                    }
-                }
-                stage('Validate RPM Install') {
-                    agent { label 'rhel-agent' }
-                    steps {
-                        // Assuming you retrieve the artifact here, or rebuild it
-                        sh '''
-                            echo "Testing package installation on RHEL..."
-                            sudo dnf install -y *.rpm
-                            
-                            # Execute the script in automated mode (IPV6 Mode 2, IPv4 Forward 0)
-                            sudo nids-config 2 0
-                            
-                            # Verify configuration
-                            if [ $(sysctl -n net.ipv6.conf.all.use_tempaddr) -eq 2 ]; then
-                                echo "Validation SUCCESS: IPv6 Mode is 2."
-                            else
-                                error "Validation FAILED: IPv6 Mode is not 2."
-                            fi
-                        '''
-                    }
-                }
+        stage('Cross-Validate (RPM on Ubuntu)') {
+            agent { label 'ubuntu-agent' }
+            steps {
+                // Groovy step to retrieve RPM built by RHEL agent
+                unstash 'rpm_package' 
+                
+                sh '''
+                    echo "Cross-checking RPM installation on Debian system..."
+                    
+                    # Install the RPM package manager tool on the Ubuntu agent
+                    sudo apt-get update
+                    sudo apt-get install -y rpm
+                    
+                    # Install the RPM package
+                    sudo rpm -i *.rpm
+                    echo "RPM package successfully installed on Debian system."
+                    
+                    # Cleanup (Optional, but good practice)
+                    sudo rpm -e nids-config 
+                '''
             }
         }
     }
