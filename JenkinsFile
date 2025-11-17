@@ -1,38 +1,147 @@
+// Jenkinsfile
 pipeline {
-    // 1. Set the primary agent for the whole pipeline (controller, or a neutral agent)
-    // You can use 'none' here if every stage defines its own agent.
-    agent none 
+    agent none // Start on the Jenkins controller
 
+    options {
+        // Keeps a few build artifacts (like the packages)
+        skipDefaultCheckout() // We'll manage checkout explicitly
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+    
     stages {
-        stage('Parallel Agent Tests') {
-            // 2. Use the 'parallel' block to define concurrent execution
+        stage('Prepare Workspace and Get Code') {
+            agent any
+            steps {
+                // Check out the code, including the script and package metadata
+                checkout scm
+                
+                // Ensure the script is executable
+                sh 'chmod +x nids-config.sh'
+                
+                // Create the necessary directory structure for packaging (host-agnostic)
+                sh 'mkdir -p package/DEBIAN'
+                sh 'mkdir -p package/SPECS'
+                
+                echo "Workspace prepared."
+            }
+        }
+        
+        stage('Build Packages in Parallel') {
             parallel {
                 
-                // --- Branch 1: Ubuntu Agent ---
-                stage('Test Ubuntu Agent') {
-                    // 3. Define the specific agent for this branch
-                    agent { label 'ubuntu-agent' } 
+                // ----------------------------------------------
+                // 📦 Branch 1: Build Debian (.deb) Package
+                // ----------------------------------------------
+                stage('Build Debian Package (Ubuntu Agent)') {
+                    agent { label 'ubuntu-agent' } // Uses the Docker agent based on Ubuntu
                     steps {
-                        echo "--- Starting Ubuntu Agent Test ---"
-                        sh 'echo "Running on Ubuntu agent: $(hostname)"'
-                        sh 'java -version' 
-                        sh 'pwd'
-                        sh 'ls -la'
-                        echo "--- Ubuntu Agent Test Finished ---"
+                        script {
+                            echo "Starting Debian packaging on Ubuntu agent..."
+                            
+                            // 1. 
+                            sh '''
+                                # Install required tools
+                                apt-get update && apt-get install -y dpkg-dev fakeroot
+                                
+                                # Create temporary directory structure
+                                mkdir -p build-deb/usr/sbin
+                                mkdir -p build-deb/DEBIAN
+
+                                # Copy files to the temporary structure
+                                cp nids-config.sh build-deb/usr/sbin/nids-config
+
+                                # Copy the control file
+                                cp package/DEBIAN/control build-deb/DEBIAN/
+
+                                # Create the package
+                                fakeroot dpkg-deb --build build-deb
+                                
+                                # Rename the package   
+                                mv build-deb.deb nids-config_1.0.0_all.deb
+                            '''
+                        
+                            archiveArtifacts artifacts: 'nids-config_1.0.0_all.deb', fingerprint: true
+                            
+                            echo "Debian package built and archived."
+                        }
                     }
                 }
-
-                // --- Branch 2: RHEL Agent ---
-                stage('Test RHEL Agent') {
-                    // 3. Define the specific agent for this branch
-                    agent { label 'rhel-agent' } 
+                
+                // ----------------------------------------------
+                // 📦 Branch 2: Build RPM (.rpm) Package
+                // ----------------------------------------------
+                stage('Build RPM Package (RHEL Agent)') {
+                    agent { label 'rhel-agent' } // Uses the Docker agent based on RHEL 9.6
                     steps {
-                        echo "--- Starting RHEL Agent Test ---"
-                        sh 'echo "Running on RHEL agent: $(hostname)"'
-                        sh 'java -version' 
-                        sh 'pwd'
-                        sh 'ls -la'
-                        echo "--- RHEL Agent Test Finished ---"
+                        script {
+                            echo "Starting RPM packaging on RHEL agent..."
+                            
+                            // sh '''
+                            //     # Install required tools
+                            //     sudo dnf install -y rpm-build
+                            //     # Setup RPM structure in home directory
+                            //     sudo rpmdev-setuptree
+                            //     # Copy source file and spec file
+                            //     cp nids-config.sh ~/rpmbuild/SOURCES/
+                            //     cp package/SPECS/nids-config.spec ~/rpmbuild/SPECS/
+                            //     # Build the package
+                            //     rpmbuild -ba ~/rpmbuild/SPECS/nids-config.spec
+                            //     find ~/rpmbuild/RPMS -name "*.rpm" -exec cp {} . \\;
+                            // '''
+                            
+                            // archiveArtifacts artifacts: '*.rpm', fingerprint: true
+                            
+                            echo "RPM package built and archived."
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ----------------------------------------------
+        // 🧪 Optional: Validation Stage
+        // ----------------------------------------------
+        stage('Run Validation Test') {
+            parallel {
+                stage('Validate Debian Install') {
+                    agent { label 'ubuntu-agent' }
+                    steps {
+                        // Assuming you retrieve the artifact here, or rebuild it
+                        // For simplicity, we'll assume the artifact is in the current dir for testing:
+                        sh '''
+                            echo "Testing package installation on Ubuntu..."
+                            sudo dpkg -i nids-config_1.0.0_all.deb
+                            
+                            # Execute the script in automated mode (IPV6 Mode 1, IPv4 Forward 1)
+                            sudo nids-config 1 1
+                            
+                            # Verify configuration
+                            if [ $(sysctl -n net.ipv4.ip_forward) -eq 1 ]; then
+                                echo "Validation SUCCESS: IPv4 Forwarding is 1."
+                            else
+                                error "Validation FAILED: IPv4 Forwarding is not 1."
+                            fi
+                        '''
+                    }
+                }
+                stage('Validate RPM Install') {
+                    agent { label 'rhel-agent' }
+                    steps {
+                        // Assuming you retrieve the artifact here, or rebuild it
+                        sh '''
+                            echo "Testing package installation on RHEL..."
+                            sudo dnf install -y *.rpm
+                            
+                            # Execute the script in automated mode (IPV6 Mode 2, IPv4 Forward 0)
+                            sudo nids-config 2 0
+                            
+                            # Verify configuration
+                            if [ $(sysctl -n net.ipv6.conf.all.use_tempaddr) -eq 2 ]; then
+                                echo "Validation SUCCESS: IPv6 Mode is 2."
+                            else
+                                error "Validation FAILED: IPv6 Mode is not 2."
+                            fi
+                        '''
                     }
                 }
             }
