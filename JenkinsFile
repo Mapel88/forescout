@@ -25,14 +25,37 @@ pipeline {
                             // CONSOLIDATED SHELL BLOCK 1: Setup and Build
                             sh '''
                                 echo "1. Setting up and Building .deb..."
-                                chmod +x nids-config.sh
+                                chmod +x nids-config.py
                                 sudo apt-get update
-                                sudo apt-get install -y dpkg-dev fakeroot
+                                sudo apt-get install -y dpkg-dev fakeroot python3-yaml
                                 
-                                # Prepare and Copy files
-                                mkdir -p build-deb/usr/sbin build-deb/DEBIAN
-                                cp nids-config.sh build-deb/usr/sbin/nids-config
+                                # Prepare directory structure
+                                mkdir -p build-deb/usr/bin
+                                mkdir -p build-deb/etc/nids
+                                mkdir -p build-deb/DEBIAN
+                                
+                                # Copy files
+                                cp nids-config.py build-deb/usr/bin/nids-config
+                                chmod 755 build-deb/usr/bin/nids-config
+                                
+                                # Create default config
+                                cat > build-deb/etc/nids/config.yaml << EOF
+ipv4_enabled: true
+ipv6_enabled: true
+interfaces: []
+last_updated: null
+EOF
+                                
+                                # Copy control files
                                 cp dockers/ubuntu-agent/control build-deb/DEBIAN/
+                                cp dockers/ubuntu-agent/postinst build-deb/DEBIAN/ || true
+                                cp dockers/ubuntu-agent/prerm build-deb/DEBIAN/ || true
+                                cp dockers/ubuntu-agent/postrm build-deb/DEBIAN/ || true
+                                
+                                # Set permissions on maintainer scripts
+                                chmod 755 build-deb/DEBIAN/postinst 2>/dev/null || true
+                                chmod 755 build-deb/DEBIAN/prerm 2>/dev/null || true
+                                chmod 755 build-deb/DEBIAN/postrm 2>/dev/null || true
                                 
                                 # Build the package
                                 fakeroot dpkg-deb --build build-deb
@@ -59,12 +82,22 @@ pipeline {
                             // CONSOLIDATED SHELL BLOCK 2: Setup and Build
                             sh '''
                                 echo "1. Setting up and Building .rpm..."
-                                chmod +x nids-config.sh
-                                sudo dnf install -y rpm-build
+                                chmod +x nids-config.py
+                                sudo dnf install -y rpm-build python3-pyyaml
                                 
-                                # Setup RPM structure and Copy files
-                                rpmdev-setuptree 
-                                cp nids-config.sh ~/rpmbuild/SOURCES/
+                                # Setup RPM structure
+                                rpmdev-setuptree
+                                
+                                # Create source directory and tarball
+                                mkdir -p ~/rpmbuild/BUILD/nids-config-1.0.0
+                                cp nids-config.py ~/rpmbuild/BUILD/nids-config-1.0.0/
+                                touch ~/rpmbuild/BUILD/nids-config-1.0.0/README.md
+                                
+                                cd ~/rpmbuild/BUILD
+                                tar czf nids-config-1.0.0.tar.gz nids-config-1.0.0
+                                mv nids-config-1.0.0.tar.gz ~/rpmbuild/SOURCES/
+                                
+                                # Copy spec file
                                 cp dockers/alma-agent/nids-config.spec ~/rpmbuild/SPECS/
                                 
                                 # Build the package
@@ -99,17 +132,29 @@ pipeline {
                         sh '''
                             echo "Testing native DEB installation and script execution..."
                             
-                            sudo dpkg -i nids-config_1.0.0_all.deb
+                            # Install dependencies
+                            sudo apt-get update
+                            sudo apt-get install -y python3-yaml iproute2
                             
-                            # Execute script and verify net.ipv4.ip_forward=1
-                            sudo nids-config 1 1
+                            # Install package
+                            sudo dpkg -i nids-config_1.0.0_all.deb || sudo apt-get install -f -y
                             
-                            if [ $(sysctl -n net.ipv4.ip_forward) -eq 1 ]; then
-                                echo "Validation SUCCESS: IPv4 Forwarding is 1."
+                            # Execute script - enable IPv6
+                            sudo nids-config --enable-ipv6
+                            
+                            # Verify configuration
+                            if grep -q "ipv6_enabled: true" /etc/nids/config.yaml; then
+                                echo "Validation SUCCESS: IPv6 is enabled in config."
                             else
-                                echo "Validation FAILED: IPv4 Forwarding is not 1."
+                                echo "Validation FAILED: IPv6 is not enabled."
                                 exit 1
                             fi
+                            
+                            # Check if script can auto-configure interfaces
+                            sudo nids-config --configure-all || echo "Note: May fail in container without proper network access"
+                            
+                            # Show status
+                            nids-config --status
                         '''
                     }
                 }
@@ -122,17 +167,28 @@ pipeline {
                         sh '''
                             echo "Testing native RPM installation and script execution..."
                             
+                            # Install package
                             sudo dnf install -y *.rpm
                             
-                            # Execute script and verify net.ipv6.conf.all.use_tempaddr=2
-                            sudo nids-config 2 0
+                            # Execute script - disable IPv4
+                            sudo nids-config --disable-ipv4
                             
-                            if [ $(sysctl -n net.ipv6.conf.all.use_tempaddr) -eq 2 ]; then
-                                echo "Validation SUCCESS: IPv6 Mode is 2."
+                            # Verify configuration
+                            if grep -q "ipv4_enabled: false" /etc/nids/config.yaml; then
+                                echo "Validation SUCCESS: IPv4 is disabled in config."
                             else
-                                echo "Validation FAILED: IPv6 Mode is not 2."
+                                echo "Validation FAILED: IPv4 is not disabled."
                                 exit 1
                             fi
+                            
+                            # Re-enable IPv4
+                            sudo nids-config --enable-ipv4
+                            
+                            # Check if script can auto-configure interfaces
+                            sudo nids-config --configure-all || echo "Note: May fail in container without proper network access"
+                            
+                            # Show status
+                            nids-config --status
                         '''
                     }
                 }

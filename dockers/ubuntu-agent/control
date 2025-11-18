@@ -4,9 +4,19 @@ Section: net
 Priority: optional
 Architecture: all
 Maintainer: Maayan App Developer <mapelboim@gmail.com>
-Depends: bash, procps, coreutils
-Description: NIDS Network Configuration Utility.
- This package installs the nids-config script used to set essential 
- IPv4 and IPv6 kernel parameters required for a robust Network 
- Intrusion Detection System environment.
- 
+Depends: python3 (>= 3.8), python3-yaml, iproute2
+Description: NIDS Network Configuration Utility
+ This package installs the nids-config tool used to configure 
+ IPv4 and IPv6 protocol monitoring settings for Network 
+ Intrusion Detection System (NIDS) environments.
+ .
+ Features:
+  - Enable/disable IPv4 and IPv6 protocol monitoring
+  - Auto-detect and configure network interfaces
+  - Enable promiscuous mode for packet capture
+  - Validate system environment for NIDS readiness
+  - Persistent configuration in /etc/nids/config.yaml
+ .
+ The tool prepares Ubuntu 22.04 LTS systems to support
+ NIDS applications by configuring network interfaces and
+ protocol settings.

@@ -1,3 +1,5 @@
+configuration-as-code
+configuration-as-code-support
 git
 workflow-aggregator
 credentials
@@ -5,3 +7,5 @@ credentials-binding
 ssh-slaves
 docker-plugin
 docker-workflow
+blueocean
+pipeline-stage-view
