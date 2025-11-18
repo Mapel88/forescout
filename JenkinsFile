@@ -83,7 +83,6 @@ EOF
                             sh '''
                                 echo "1. Setting up and Building .rpm..."
                                 chmod +x nids-config.py
-                                sudo dnf install -y rpm-build python3-pyyaml
                                 
                                 # Setup RPM structure
                                 rpmdev-setuptree

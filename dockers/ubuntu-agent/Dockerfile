@@ -12,7 +12,7 @@ RUN apt-get install -y --no-install-recommends \
     openjdk-17-jdk \
     ca-certificates apt-transport-https gnupg lsb-release curl \
     build-essential ruby-full rubygems-integration \
-    python3 python3-venv python3-pip sudo wget git dpkg-dev \
+    python3 python3-venv python3-pip python3-pyyaml sudo wget git dpkg-dev \
     pkg-config make file openssh-client openssh-server
 RUN rm -rf /var/lib/apt/lists/*
 
