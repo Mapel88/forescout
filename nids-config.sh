@@ -41,6 +41,7 @@ validate_input() {
 # --- Function to apply changes using sysctl ---
 apply_sysctl_changes() {
     echo "-> Applying new sysctl settings..."
+    cat "$CONFIG_FILE"
     if sysctl -p "$CONFIG_FILE" &>/dev/null; then
         echo "   [SUCCESS] New settings loaded successfully."
     else
