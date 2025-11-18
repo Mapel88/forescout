@@ -4,9 +4,9 @@ USER root
 
 # Install basic tools Jenkins pipelines might use
 RUN apt-get update && apt-get install -y \
-    git curl wget unzip \
-    apt-transport-https ca-certificates gnupg lsb-release
-RUN rm -rf /var/lib/apt/lists/*
+    git curl unzip \
+    ca-certificates gnupg lsb-release \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI
 RUN curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
@@ -22,6 +22,6 @@ RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
 # Copy the JCasC configuration
 COPY jenkins-casc.yaml /usr/share/jenkins/ref/casc.yaml
 ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
-# RUN chown jenkins:jenkins /var/jenkins_home/casc.yaml
+
 
 USER jenkins

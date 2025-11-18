@@ -7,17 +7,13 @@ ARG UID=1000
 ARG GID=1000
 
 # Install packages for building .deb and Java
-RUN apt-get update 
-RUN apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jdk \
-    ca-certificates apt-transport-https gnupg lsb-release curl \
-    build-essential ruby-full rubygems-integration \
-    python3 python3-venv python3-pip python3-pyyaml sudo wget git dpkg-dev \
-    pkg-config make file openssh-client openssh-server
-RUN rm -rf /var/lib/apt/lists/*
-
-# Install fpm (packaging tool)
-RUN gem install --no-document fpm
+    ca-certificates curl \
+    build-essential pkg-config file dpkg-dev \
+    python3 python3-venv python3-pip python3-yaml \
+    sudo git openssh-client iproute2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user to match host UID
 RUN groupadd --gid ${GID} ${USER} || true \

@@ -1,197 +1,180 @@
-pipeline {
-    agent none 
+    pipeline {
+        agent none 
 
-    options {
-        skipDefaultCheckout()
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-    }
-    
-    stages {
+        options {
+            skipDefaultCheckout()
+            buildDiscarder(logRotator(numToKeepStr: '10'))
+        }
         
-        // =============================================================
-        // 1. BUILD STAGE: Packages built and Stashed (Parallel on 2 Agents)
-        // =============================================================
-        stage('Build Packages') {
-            parallel {
+        stages {
+            
+            // =============================================================
+            // 1. BUILD STAGE: Packages built and Stashed (Parallel on 2 Agents)
+            // =============================================================
+            stage('Build Packages') {
+                parallel {
+                    
+                    // 🚀 Branch 1: Ubuntu (Build & Stash DEB)
+                    stage('Ubuntu: Build DEB') {
+                        agent { label 'ubuntu-agent' } 
+                        steps {
+                            script {
+                                checkout scm
+                                echo "--- Starting Ubuntu Agent (BUILD) ---"
+                                
+                                // CONSOLIDATED SHELL BLOCK 1: Setup and Build
+                                sh '''
+                                    echo "1. Setting up and Building .deb..."
+                                    chmod +x nids-config.py
+                                    
+                                    # Prepare directory structure
+                                    mkdir -p build-deb/usr/bin
+                                    mkdir -p build-deb/etc/nids
+                                    mkdir -p build-deb/DEBIAN
+                                    
+                                    # Copy files
+                                    cp nids-config.py build-deb/usr/bin/nids-config
+                                    chmod 755 build-deb/usr/bin/nids-config
+                                    
+                                    # Create default config
+                                    cp nids-config.yaml build-deb/etc/nids/config.yaml
+                                    
+                                    # Copy control files
+                                    cp dockers/ubuntu-agent/control build-deb/DEBIAN/
                 
-                // 🚀 Branch 1: Ubuntu (Build & Stash DEB)
-                stage('Ubuntu: Build DEB') {
-                    agent { label 'ubuntu-agent' } 
-                    steps {
-                        script {
-                            checkout scm
-                            echo "--- Starting Ubuntu Agent (BUILD) ---"
-                            
-                            // CONSOLIDATED SHELL BLOCK 1: Setup and Build
-                            sh '''
-                                echo "1. Setting up and Building .deb..."
-                                chmod +x nids-config.py
-                                sudo apt-get update
-                                sudo apt-get install -y dpkg-dev fakeroot python3-yaml
+                                    # Build the package
+                                    sudo dpkg-deb --build build-deb
+                                    mv build-deb.deb nids-config_1.0.0_all.deb
+                                '''
                                 
-                                # Prepare directory structure
-                                mkdir -p build-deb/usr/bin
-                                mkdir -p build-deb/etc/nids
-                                mkdir -p build-deb/DEBIAN
+                                // Stash and Archive
+                                stash name: 'deb_package', includes: 'nids-config_1.0.0_all.deb'
+                                archiveArtifacts artifacts: 'nids-config_1.0.0_all.deb', fingerprint: true
                                 
-                                # Copy files
-                                cp nids-config.py build-deb/usr/bin/nids-config
-                                chmod 755 build-deb/usr/bin/nids-config
-                                
-                                # Create default config
-                                cat > build-deb/etc/nids/config.yaml << EOF
-ipv4_enabled: true
-ipv6_enabled: true
-interfaces: []
-last_updated: null
-EOF
-                                
-                                # Copy control files
-                                cp dockers/ubuntu-agent/control build-deb/DEBIAN/
-                                cp dockers/ubuntu-agent/postinst build-deb/DEBIAN/ || true
-                                cp dockers/ubuntu-agent/prerm build-deb/DEBIAN/ || true
-                                cp dockers/ubuntu-agent/postrm build-deb/DEBIAN/ || true
-                                
-                                # Set permissions on maintainer scripts
-                                chmod 755 build-deb/DEBIAN/postinst 2>/dev/null || true
-                                chmod 755 build-deb/DEBIAN/prerm 2>/dev/null || true
-                                chmod 755 build-deb/DEBIAN/postrm 2>/dev/null || true
-                                
-                                # Build the package
-                                fakeroot dpkg-deb --build build-deb
-                                mv build-deb.deb nids-config_1.0.0_all.deb
-                            '''
-                            
-                            // Stash and Archive
-                            stash name: 'deb_package', includes: 'nids-config_1.0.0_all.deb'
-                            archiveArtifacts artifacts: 'nids-config_1.0.0_all.deb', fingerprint: true
-                            
-                            echo "--- Ubuntu Agent (BUILD) Finished ---"
+                                echo "--- Ubuntu Agent (BUILD) Finished ---"
+                            }
                         }
                     }
-                }
-                
-                // 🚀 Branch 2: RHEL (Build & Stash RPM)
-                stage('RHEL: Build RPM') {
-                    agent { label 'rhel-agent' } 
-                    steps {
-                        script {
-                            checkout scm
-                            echo "--- Starting RHEL Agent (BUILD) ---"
-                            
-                            // CONSOLIDATED SHELL BLOCK 2: Setup and Build
-                            sh '''
-                                echo "1. Setting up and Building .rpm..."
-                                chmod +x nids-config.py
+                    
+                    // 🚀 Branch 2: RHEL (Build & Stash RPM)
+                    stage('RHEL: Build RPM') {
+                        agent { label 'rhel-agent' } 
+                        steps {
+                            script {
+                                checkout scm
+                                echo "--- Starting RHEL Agent (BUILD) ---"
                                 
-                                # Setup RPM structure
-                                rpmdev-setuptree
+                                // CONSOLIDATED SHELL BLOCK 2: Setup and Build
+                                sh '''
+                                    pwd
+                                    echo "1. Setting up and Building .rpm..."
+                                    chmod +x nids-config.py
+                                    
+                                    # Setup RPM structure
+                                    rpmdev-setuptree
+                                    
+                                    # Create source directory and tarball
+                                    mkdir -p ~/rpmbuild/BUILD/nids-config-1.0.0
+                                    cp nids-config.py ~/rpmbuild/BUILD/nids-config-1.0.0/
+                                    touch ~/rpmbuild/BUILD/nids-config-1.0.0/README.md
+                                    
+                                    # Copy spec file
+                                    cp dockers/alma-agent/nids-config.spec ~/rpmbuild/SPECS/
+                                    
+                                    cd ~/rpmbuild/BUILD
+                                    tar czf nids-config-1.0.0.tar.gz nids-config-1.0.0
+                                    mv nids-config-1.0.0.tar.gz ~/rpmbuild/SOURCES/
+                                    
+                                    # Build the package
+                                    rpmbuild -ba ~/rpmbuild/SPECS/nids-config.spec
+                                    
+                                    # Find the built RPM file and copy it to the current directory
+                                    cd -
+                                    find ~/rpmbuild/RPMS -name "*.rpm" -exec cp {} . \\;
+                                '''
                                 
-                                # Create source directory and tarball
-                                mkdir -p ~/rpmbuild/BUILD/nids-config-1.0.0
-                                cp nids-config.py ~/rpmbuild/BUILD/nids-config-1.0.0/
-                                touch ~/rpmbuild/BUILD/nids-config-1.0.0/README.md
+                                // Stash and Archive
+                                stash name: 'rpm_package', includes: '*.rpm'
+                                archiveArtifacts artifacts: '*.rpm', fingerprint: true
                                 
-                                cd ~/rpmbuild/BUILD
-                                tar czf nids-config-1.0.0.tar.gz nids-config-1.0.0
-                                mv nids-config-1.0.0.tar.gz ~/rpmbuild/SOURCES/
-                                
-                                # Copy spec file
-                                cp dockers/alma-agent/nids-config.spec ~/rpmbuild/SPECS/
-                                
-                                # Build the package
-                                rpmbuild -ba ~/rpmbuild/SPECS/nids-config.spec
-                                
-                                # Find the built RPM file and copy it to the current directory
-                                find ~/rpmbuild/RPMS -name "*.rpm" -exec cp {} . \\;
-                            '''
-                            
-                            // Stash and Archive
-                            stash name: 'rpm_package', includes: '*.rpm'
-                            archiveArtifacts artifacts: '*.rpm', fingerprint: true
-                            
-                            echo "--- RHEL Agent (BUILD) Finished ---"
+                                echo "--- RHEL Agent (BUILD) Finished ---"
+                            }
                         }
                     }
-                }
-            } // End of Build Stage Parallel
-        } // End of Build Stage
-        
-        // =============================================================
-        // 2. VALIDATION STAGE: Tests run against stashed packages (Parallel on 2 Agents)
-        // =============================================================
-        stage('Test Validation') {
-            parallel {
-                
-                // 🧪 Test 1: Validate DEB package on Ubuntu agent (Native Test)
-                stage('Test: Ubuntu Native DEB') {
-                    agent { label 'ubuntu-agent' }
-                    steps {
-                        unstash 'deb_package' // Retrieve DEB built in previous stage
-                        sh '''
-                            echo "Testing native DEB installation and script execution..."
-                            
-                            # Install dependencies
-                            sudo apt-get update
-                            sudo apt-get install -y python3-yaml iproute2
-                            
-                            # Install package
-                            sudo dpkg -i nids-config_1.0.0_all.deb || sudo apt-get install -f -y
-                            
-                            # Execute script - enable IPv6
-                            sudo nids-config --enable-ipv6
-                            
-                            # Verify configuration
-                            if grep -q "ipv6_enabled: true" /etc/nids/config.yaml; then
-                                echo "Validation SUCCESS: IPv6 is enabled in config."
-                            else
-                                echo "Validation FAILED: IPv6 is not enabled."
-                                exit 1
-                            fi
-                            
-                            # Check if script can auto-configure interfaces
-                            sudo nids-config --configure-all || echo "Note: May fail in container without proper network access"
-                            
-                            # Show status
-                            nids-config --status
-                        '''
+                } // End of Build Stage Parallel
+            } // End of Build Stage
+            
+            // =============================================================
+            // 2. VALIDATION STAGE: Tests run against stashed packages (Parallel on 2 Agents)
+            // =============================================================
+            stage('Test Validation') {
+                parallel {
+                    
+                    // 🧪 Test 1: Validate DEB package on Ubuntu agent (Native Test)
+                    stage('Test: Ubuntu Native DEB') {
+                        agent { label 'ubuntu-agent' }
+                        steps {
+                            unstash 'deb_package' // Retrieve DEB built in previous stage
+                            sh '''
+                                echo "Testing native DEB installation and script execution..."
+                                
+                                # Install package
+                                sudo dpkg -i nids-config_1.0.0_all.deb 
+                                
+                                # Execute script - enable IPv6
+                                sudo nids-config --enable-ipv6
+                                
+                                # Verify configuration
+                                if grep -q "ipv6_enabled: true" /etc/nids/config.yaml; then
+                                    echo "Validation SUCCESS: IPv6 is enabled in config."
+                                else
+                                    echo "Validation FAILED: IPv6 is not enabled."
+                                    exit 1
+                                fi
+                                
+                                # Check if script can auto-configure interfaces
+                                sudo nids-config --configure-all || echo "Note: May fail in container without proper network access"
+                                
+                                # Show status
+                                nids-config --status
+                            '''
+                        }
                     }
-                }
-                
-                // 🧪 Test 2: Validate RPM package on RHEL agent (Native Test)
-                stage('Test: RHEL Native RPM') {
-                    agent { label 'rhel-agent' }
-                    steps {
-                        unstash 'rpm_package' // Retrieve RPM built in previous stage
-                        sh '''
-                            echo "Testing native RPM installation and script execution..."
-                            
-                            # Install package
-                            sudo dnf install -y *.rpm
-                            
-                            # Execute script - disable IPv4
-                            sudo nids-config --disable-ipv4
-                            
-                            # Verify configuration
-                            if grep -q "ipv4_enabled: false" /etc/nids/config.yaml; then
-                                echo "Validation SUCCESS: IPv4 is disabled in config."
-                            else
-                                echo "Validation FAILED: IPv4 is not disabled."
-                                exit 1
-                            fi
-                            
-                            # Re-enable IPv4
-                            sudo nids-config --enable-ipv4
-                            
-                            # Check if script can auto-configure interfaces
-                            sudo nids-config --configure-all || echo "Note: May fail in container without proper network access"
-                            
-                            # Show status
-                            nids-config --status
-                        '''
+                    
+                    // 🧪 Test 2: Validate RPM package on RHEL agent (Native Test)
+                    stage('Test: RHEL Native RPM') {
+                        agent { label 'rhel-agent' }
+                        steps {
+                            unstash 'rpm_package' // Retrieve RPM built in previous stage
+                            sh '''
+                                echo "Testing native RPM installation and script execution..."
+                                
+                                # Install package
+                                sudo dnf install -y *.rpm
+                                
+                                # Execute script - disable IPv4
+                                sudo nids-config --disable-ipv4
+                                
+                                # Verify configuration
+                                if grep -q "ipv4_enabled: false" /etc/nids/config.yaml; then
+                                    echo "Validation SUCCESS: IPv4 is disabled in config."
+                                else
+                                    echo "Validation FAILED: IPv4 is not disabled."
+                                    exit 1
+                                fi
+                                
+                                # Re-enable IPv4
+                                sudo nids-config --enable-ipv4
+                                
+                                # Check if script can auto-configure interfaces
+                                sudo nids-config --configure-all || echo "Note: May fail in container without proper network access"
+                                
+                                # Show status
+                                nids-config --status
+                            '''
+                        }
                     }
-                }
-            } // End of Test Validation Parallel
-        } // End of Test Validation Stage
+                } // End of Test Validation Parallel
+            } // End of Test Validation Stage
+        }
     }
-}

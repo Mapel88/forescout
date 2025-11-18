@@ -9,11 +9,10 @@ ARG GID=1000
 
 # Install necessary packages
 RUN dnf -y update && dnf -y install \
-    sudo wget git java-17-openjdk-devel openssh-server \
+    sudo git java-17-openjdk-devel openssh-server \
     gcc make rpm-build rpmdevtools redhat-rpm-config \
-    python3 python3-pip python3-pyyaml
-    
-RUN dnf clean all
+    python3 python3-pip python3-pyyaml \
+    && dnf clean all
 
 # Configure SSH for Jenkins agent
 RUN mkdir /var/run/sshd
