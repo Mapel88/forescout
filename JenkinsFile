@@ -1,4 +1,4 @@
-    pipeline {
+pipeline {
         agent none 
 
         options {
@@ -35,9 +35,6 @@
                                     # Copy files
                                     cp nids-config.py build-deb/usr/bin/nids-config
                                     chmod 755 build-deb/usr/bin/nids-config
-                                    
-                                    # Create default config
-                                    cp nids-config.yaml build-deb/etc/nids/config.yaml
                                     
                                     # Copy control files
                                     cp dockers/ubuntu-agent/control build-deb/DEBIAN/
@@ -114,29 +111,41 @@
                     stage('Test: Ubuntu Native DEB') {
                         agent { label 'ubuntu-agent' }
                         steps {
+                            checkout scm
                             unstash 'deb_package' // Retrieve DEB built in previous stage
                             sh '''
-                                echo "Testing native DEB installation and script execution..."
-                                
-                                # Install package
-                                sudo dpkg -i nids-config_1.0.0_all.deb 
-                                
-                                # Execute script - enable IPv6
-                                sudo nids-config --enable-ipv6
-                                
-                                # Verify configuration
-                                if grep -q "ipv6_enabled: true" /etc/nids/config.yaml; then
-                                    echo "Validation SUCCESS: IPv6 is enabled in config."
-                                else
-                                    echo "Validation FAILED: IPv6 is not enabled."
-                                    exit 1
+                                echo "Installing DEB package..."
+                                sudo dpkg -i nids-config_1.0.0_all.deb || true
+                                sudo apt-get update -y || true
+
+                                # Ensure the installed command is on PATH
+                                if ! command -v nids-config >/dev/null 2>&1; then
+                                  if [ -x /usr/bin/nids-config ]; then
+                                    sudo ln -sf /usr/bin/nids-config /usr/local/bin/nids-config || true
+                                  fi
                                 fi
-                                
-                                # Check if script can auto-configure interfaces
-                                sudo nids-config --configure-all || echo "Note: May fail in container without proper network access"
-                                
-                                # Show status
-                                nids-config --status
+
+                                echo "1) Disable IPv6 (kernel + config) and validate"
+                                sudo nids-config --disable-ipv6 || true
+                                sudo python3 validator.py --expect-ipv6 false --expect-ipv4 skip
+
+                                echo "2) Enable IPv6 (kernel + config) and validate"
+                                sudo nids-config --enable-ipv6 || true
+                                sudo python3 validator.py --expect-ipv6 true --expect-ipv4 skip
+
+                                echo "3) Disable IPv4 (config-only) and validate"
+                                sudo nids-config --disable-ipv4 || true
+                                sudo python3 validator.py --expect-ipv4 false --expect-ipv6 skip
+
+                                echo "4) Enable IPv4 (config-only) and validate"
+                                sudo nids-config --enable-ipv4 || true
+                                sudo python3 validator.py --expect-ipv4 true --expect-ipv6 skip
+
+                                echo "5) Run configure-all and validate interfaces recorded/promisc"
+                                sudo nids-config --configure-all || true
+                                sudo python3 validator.py --run-configure-all --expect-ipv4 skip --expect-ipv6 skip
+
+                                echo "Ubuntu validation completed"
                             '''
                         }
                     }
@@ -145,32 +154,40 @@
                     stage('Test: RHEL Native RPM') {
                         agent { label 'rhel-agent' }
                         steps {
+                            checkout scm
                             unstash 'rpm_package' // Retrieve RPM built in previous stage
                             sh '''
-                                echo "Testing native RPM installation and script execution..."
-                                
-                                # Install package
-                                sudo dnf install -y *.rpm
-                                
-                                # Execute script - disable IPv4
-                                sudo nids-config --disable-ipv4
-                                
-                                # Verify configuration
-                                if grep -q "ipv4_enabled: false" /etc/nids/config.yaml; then
-                                    echo "Validation SUCCESS: IPv4 is disabled in config."
-                                else
-                                    echo "Validation FAILED: IPv4 is not disabled."
-                                    exit 1
+                                echo "Installing RPM package(s)..."
+                                sudo dnf install -y *.rpm || true
+
+                                # Ensure the installed command is on PATH
+                                if ! command -v nids-config >/dev/null 2>&1; then
+                                  if [ -x /usr/bin/nids-config ]; then
+                                    sudo ln -sf /usr/bin/nids-config /usr/local/bin/nids-config || true
+                                  fi
                                 fi
-                                
-                                # Re-enable IPv4
-                                sudo nids-config --enable-ipv4
-                                
-                                # Check if script can auto-configure interfaces
-                                sudo nids-config --configure-all || echo "Note: May fail in container without proper network access"
-                                
-                                # Show status
-                                nids-config --status
+
+                                echo "1) Disable IPv6 (kernel + config) and validate"
+                                sudo nids-config --disable-ipv6 || true
+                                sudo python3 validator.py --expect-ipv6 false --expect-ipv4 skip
+
+                                echo "2) Enable IPv6 (kernel + config) and validate"
+                                sudo nids-config --enable-ipv6 || true
+                                sudo python3 validator.py --expect-ipv6 true --expect-ipv4 skip
+
+                                echo "3) Disable IPv4 (config-only) and validate"
+                                sudo nids-config --disable-ipv4 || true
+                                sudo python3 validator.py --expect-ipv4 false --expect-ipv6 skip
+
+                                echo "4) Enable IPv4 (config-only) and validate"
+                                sudo nids-config --enable-ipv4 || true
+                                sudo python3 validator.py --expect-ipv4 true --expect-ipv6 skip
+
+                                echo "5) Run configure-all and validate interfaces recorded/promisc"
+                                sudo nids-config --configure-all || true
+                                sudo python3 validator.py --run-configure-all --expect-ipv4 skip --expect-ipv6 skip
+
+                                echo "RHEL validation completed"
                             '''
                         }
                     }

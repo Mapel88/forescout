@@ -39,7 +39,7 @@ class NIDSConfig:
                 with open(self.config_file, 'r') as f:
                     config = yaml.safe_load(f)
                     # Merge with defaults in case of missing keys
-                    return {**DEFAULT_CONFIG, **config}
+                    return {**DEFAULT_CONFIG, **(config or {})}
             else:
                 return DEFAULT_CONFIG.copy()
         except Exception as e:
@@ -61,36 +61,74 @@ class NIDSConfig:
         except Exception as e:
             print(f"Error saving config: {e}", file=sys.stderr)
             return False
+
+    def _apply_kernel_ipv6(self, enable: bool) -> bool:
+        """Apply kernel-level IPv6 enable/disable using sysctl.
+        Requires root. Returns True on success."""
+        if os.geteuid() != 0: # type: ignore
+            print("Error: kernel IPv6 changes require root privileges.", file=sys.stderr)
+            return False
+
+        val = '0' if enable else '1'
+        cmds = [
+            ['sysctl', '-w', f'net.ipv6.conf.all.disable_ipv6={val}'],
+            ['sysctl', '-w', f'net.ipv6.conf.default.disable_ipv6={val}']
+        ]
+
+        for cmd in cmds:
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            except subprocess.CalledProcessError as e:
+                out = e.stdout.strip() if e.stdout else ''
+                err = e.stderr.strip() if e.stderr else ''
+                print(f"Error applying sysctl {' '.join(cmd)}: {err or out}", file=sys.stderr)
+                return False
+            except FileNotFoundError:
+                print("Error: 'sysctl' command not found. Cannot change kernel IPv6 settings.", file=sys.stderr)
+                return False
+
+        return True
     
     def enable_ipv6(self):
-        """Enable IPv6 monitoring"""
+        """Enable IPv6 monitoring and attempt to enable IPv6 in the kernel"""
+        # Try to apply kernel change first (safer to fail early)
+        if not self._apply_kernel_ipv6(True):
+            print("Failed to enable IPv6 at kernel level. Aborting change.", file=sys.stderr)
+            return False
+
         self.config['ipv6_enabled'] = True
         if self.save_config():
-            print("✓ IPv6 monitoring enabled")
+            print("✓ IPv6 monitoring enabled (and kernel IPv6 enabled)")
             return True
         return False
     
     def disable_ipv6(self):
-        """Disable IPv6 monitoring"""
+        """Disable IPv6 monitoring and attempt to disable IPv6 in the kernel"""
+        if not self._apply_kernel_ipv6(False):
+            print("Failed to disable IPv6 at kernel level. Aborting change.", file=sys.stderr)
+            return False
+
         self.config['ipv6_enabled'] = False
         if self.save_config():
-            print("✓ IPv6 monitoring disabled")
+            print("✓ IPv6 monitoring disabled (and kernel IPv6 disabled)")
             return True
         return False
     
     def enable_ipv4(self):
-        """Enable IPv4 monitoring"""
+        """Enable IPv4 monitoring (updates config only). Kernel-level toggling for IPv4 is not supported."""
+        print("Note: IPv4 kernel-level enable/disable is not supported by this tool. Updating config only.")
         self.config['ipv4_enabled'] = True
         if self.save_config():
-            print("✓ IPv4 monitoring enabled")
+            print("✓ IPv4 monitoring enabled (config updated)")
             return True
         return False
     
     def disable_ipv4(self):
-        """Disable IPv4 monitoring"""
+        """Disable IPv4 monitoring (updates config only). Kernel-level toggling for IPv4 is not supported."""
+        print("Note: IPv4 kernel-level enable/disable is not supported by this tool. Updating config only.")
         self.config['ipv4_enabled'] = False
         if self.save_config():
-            print("✓ IPv4 monitoring disabled")
+            print("✓ IPv4 monitoring disabled (config updated)")
             return True
         return False
     
@@ -185,7 +223,7 @@ class NetworkInterface:
 
 def check_permissions():
     """Check if running with sufficient permissions"""
-    if os.geteuid() != 0:
+    if os.geteuid() != 0: # type: ignore
         print("Error: This script requires root privileges.", file=sys.stderr)
         print("Please run with sudo or as root.", file=sys.stderr)
         return False
@@ -262,7 +300,7 @@ def validate_environment():
     checks = []
     
     # Check 1: Root privileges
-    has_root = os.geteuid() == 0
+    has_root = os.geteuid() == 0 # type: ignore
     checks.append(("Root privileges", has_root))
     
     # Check 2: IPv6 kernel support
@@ -311,8 +349,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --enable-ipv6              Enable IPv6 monitoring
-  %(prog)s --disable-ipv6             Disable IPv6 monitoring
+  %(prog)s --enable-ipv6              Enable IPv6 monitoring (and kernel IPv6)
+  %(prog)s --disable-ipv6             Disable IPv6 monitoring (and kernel IPv6)
   %(prog)s --configure-all            Auto-configure all interfaces
   %(prog)s --status                   Show current configuration
   %(prog)s --validate                 Validate system environment

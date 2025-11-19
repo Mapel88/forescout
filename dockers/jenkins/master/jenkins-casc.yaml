@@ -12,7 +12,7 @@ credentials:
     - credentials:
       - usernamePassword:
           id: "4caed40b-5d9a-401c-bbb9-2fd5673b07ee"
-          password: "{AQAAABAAAAAwBlS6MN3UeALK9a5ARu3FoztTGwvN359jR7uWBn1pPP4PVas6fy432tUFeYWSBPR2atkIkcldsK8u8YVgSAt80g==}"
+          password: "{AQAAABAAAAAwjCVx82PojiP+hawE8LuNSQwgier8ycyZl/9Y6609LihGJAx0T30++wtemprIxqI2xkCXYOctBK5bhrso/yr13w==}"
           scope: GLOBAL
           username: "mapel88"
       domain: {
@@ -38,7 +38,7 @@ jenkins:
           cpuPeriod: 0
           cpuQuota: 0
           image: "ubuntu-agent:latest"
-          privileged: true
+          # privileged: true
         labelString: "ubuntu-agent"
         name: "ubuntu"
         pullStrategy: PULL_NEVER
@@ -50,7 +50,7 @@ jenkins:
           cpuPeriod: 0
           cpuQuota: 0
           image: "rhel-agent:latest"
-          privileged: true
+          # privileged: true
         labelString: "rhel-agent"
         mode: EXCLUSIVE
         name: "rhel"
