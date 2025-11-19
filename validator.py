@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import os
-import shlex
 import subprocess
 import sys
 from typing import List, Optional
@@ -19,8 +18,18 @@ def run(cmd: List[str], capture: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=capture, text=True)
 
 
+def shutil_which(name: str) -> Optional[str]:
+    # simple implementation to avoid importing shutil at top-level
+    for p in os.environ.get("PATH", "").split(os.pathsep):
+        p = p.strip('"')
+        exe = os.path.join(p, name)
+        if os.path.isfile(exe) and os.access(exe, os.X_OK):
+            return exe
+    return None
+
+
 def load_yaml_simple(path: str) -> dict:
-    data = {"ipv4_enabled": None, "ipv6_enabled": None, "interfaces": []}
+    data = {"ipv4_enabled": None, "ipv6_enabled": None, "interfaces": [], "promiscuous_interfaces": []}
     if not os.path.exists(path):
         return data
     with open(path, "r") as f:
@@ -31,17 +40,17 @@ def load_yaml_simple(path: str) -> dict:
                 continue
             if ":" in s and not s.startswith("-"):
                 k, v = [p.strip() for p in s.split(":", 1)]
-                if k == "interfaces":
-                    key = "interfaces"
+                if k in ("interfaces", "promiscuous_interfaces"):
+                    key = k
                     continue
                 if v.lower() in ("true", "false"):
                     data[k] = v.lower() == "true"
                 else:
                     data[k] = v or None
-            elif s.startswith("-") and key == "interfaces":
+            elif s.startswith("-") and key in ("interfaces", "promiscuous_interfaces"):
                 item = s.lstrip("-").strip()
                 if item:
-                    data["interfaces"].append(item)
+                    data[key].append(item)
             else:
                 key = None
     return data
@@ -52,11 +61,11 @@ def load_config(path: str) -> dict:
         try:
             with open(path, "r") as f:
                 parsed = yaml.safe_load(f) or {}
-            # Normalize
             return {
                 "ipv4_enabled": parsed.get("ipv4_enabled"),
                 "ipv6_enabled": parsed.get("ipv6_enabled"),
                 "interfaces": parsed.get("interfaces") or [],
+                "promiscuous_interfaces": parsed.get("promiscuous_interfaces") or [],
             }
         except Exception:
             return load_yaml_simple(path)
@@ -69,7 +78,6 @@ def check_sysctl_ipv6_enabled() -> Optional[bool]:
         p = run(["sysctl", "net.ipv6.conf.all.disable_ipv6"])
         if p.returncode != 0:
             return None
-        # expect "net.ipv6.conf.all.disable_ipv6 = 0"
         out = p.stdout.strip()
         if "=" in out:
             val = out.split("=", 1)[1].strip()
@@ -80,7 +88,6 @@ def check_sysctl_ipv6_enabled() -> Optional[bool]:
 
 
 def interface_in_promisc(iface: str) -> Optional[bool]:
-    # Prefer `ip` output
     ip_bin = shutil_which("ip")
     if ip_bin:
         try:
@@ -90,27 +97,15 @@ def interface_in_promisc(iface: str) -> Optional[bool]:
             return "PROMISC" in p.stdout
         except Exception:
             return None
-    # Fallback: read /sys/class/net/<iface>/flags (hex)
     flags_path = f"/sys/class/net/{iface}/flags"
     if os.path.exists(flags_path):
         try:
             with open(flags_path, "r") as f:
                 raw = f.read().strip()
-            # some systems show 0x...; int() handles both
             flags = int(raw, 0)
             return bool(flags & 0x100)  # IFF_PROMISC
         except Exception:
             return None
-    return None
-
-
-def shutil_which(name: str) -> Optional[str]:
-    # avoid importing shutil at top to keep small
-    for p in os.environ.get("PATH", "").split(os.pathsep):
-        p = p.strip('"')
-        exe = os.path.join(p, name)
-        if os.path.isfile(exe) and os.access(exe, os.X_OK):
-            return exe
     return None
 
 
@@ -134,7 +129,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    sudo = "sudo" if os.geteuid() != 0 and shutil_which("sudo") else "" # type: ignore
+    sudo = "sudo" if os.geteuid() != 0 and shutil_which("sudo") else ""  # type: ignore
     failures = 0
 
     if not os.path.exists(args.config):
@@ -144,6 +139,12 @@ def main():
         print(f"Using config: {args.config}")
 
     cfg = load_config(args.config)
+
+    # Ensure config contains expected keys
+    for key in ("ipv4_enabled", "ipv6_enabled", "interfaces", "promiscuous_interfaces"):
+        if key not in cfg:
+            print(f"ERROR: {key} missing in config", file=sys.stderr)
+            failures += 1
 
     def check_expected(key: str, expected: str):
         nonlocal failures
@@ -160,54 +161,85 @@ def main():
             if expected != "skip":
                 print(f"{key} matches expected: {actual}")
 
+    # IPv6 checks: require both config and kernel state to match when not skipped
     if args.expect_ipv6 != "skip":
         check_expected("ipv6_enabled", args.expect_ipv6)
-        if args.expect_ipv6 == "true":
+        if args.expect_ipv6 != "skip":
             ipv6_kernel = check_sysctl_ipv6_enabled()
-            if ipv6_kernel is True:
+            if ipv6_kernel is True and args.expect_ipv6 == "true":
                 print("Kernel IPv6 enabled (disable_ipv6=0)")
-            elif ipv6_kernel is False:
-                print("ERROR: Kernel IPv6 is NOT enabled", file=sys.stderr)
-                failures += 1
+            elif ipv6_kernel is False and args.expect_ipv6 == "false":
+                print("Kernel IPv6 disabled (disable_ipv6=1)")
             else:
-                print("ERROR: Cannot determine kernel IPv6 state (sysctl missing?)", file=sys.stderr)
+                # treat inability to determine or mismatch as failure (aligns with nids-config strict behavior)
+                if ipv6_kernel is None:
+                    print("ERROR: Cannot determine kernel IPv6 state (sysctl missing or permission denied)", file=sys.stderr)
+                else:
+                    print("ERROR: Kernel IPv6 state does not match expected", file=sys.stderr)
                 failures += 1
 
+    # IPv4 config check (config-only)
     if args.expect_ipv4 != "skip":
         check_expected("ipv4_enabled", args.expect_ipv4)
 
+    # run-configure-all: require it to succeed
     if args.run_configure_all:
         print("Running configure-all (may need root)...")
         ok = run_configure_all(sudo)
         if not ok:
-            print("Warning: configure-all failed or unavailable (container/permissions?)", file=sys.stderr)
+            print("ERROR: configure-all failed or unavailable", file=sys.stderr)
+            failures += 1
 
     interfaces: List[str] = cfg.get("interfaces") or []
+    prom_ifaces: List[str] = cfg.get("promiscuous_interfaces") or []
+
     if not interfaces:
         print("No configured interfaces in config")
+        # If user asked to run configure-all, lack of configured interfaces is an error
+        if args.run_configure_all:
+            print("ERROR: configure-all did not populate configured interfaces", file=sys.stderr)
+            failures += 1
     else:
         print("Configured interfaces:")
         for i in interfaces:
             print(f"  - {i}")
 
-        ip_bin = shutil_which("ip")
-        if not ip_bin:
-            print("ERROR: 'ip' command not available to check promiscuous mode", file=sys.stderr)
+    # Check promiscuous_interfaces exist in config
+    if not prom_ifaces:
+        print("No promiscuous_interfaces listed in config")
+        # If configure-all was requested it's an error (configure-all should set promisc)
+        if args.run_configure_all:
+            print("ERROR: configure-all did not record any promiscuous interfaces", file=sys.stderr)
             failures += 1
-        else:
-            prom_ok = False
-            for i in interfaces:
-                if run([ip_bin, "link", "show", i]).returncode != 0:
-                    print(f"ERROR: interface {i} not present", file=sys.stderr)
-                    failures += 1
-                    continue
-                if "PROMISC" in run([ip_bin, "-o", "link", "show", i]).stdout:
-                    print(f"Interface {i} is in promiscuous mode")
-                    prom_ok = True
-                else:
-                    print(f"Interface {i} is NOT in promiscuous mode", file=sys.stderr)
-            if not prom_ok:
-                print("ERROR: No configured interface is in promiscuous mode", file=sys.stderr)
+    else:
+        print("Promiscuous interfaces recorded in config:")
+        for i in prom_ifaces:
+            print(f"  - {i}")
+
+    # Verify interfaces exist and promiscuous state matches configured promiscuous_interfaces
+    ip_bin = shutil_which("ip")
+    if not ip_bin:
+        print("ERROR: 'ip' command not available to check interface state", file=sys.stderr)
+        failures += 1
+    else:
+        # verify each configured interface exists
+        for i in interfaces:
+            p = run([ip_bin, "link", "show", i])
+            if p.returncode != 0:
+                print(f"ERROR: interface {i} not present on system", file=sys.stderr)
+                failures += 1
+
+        # verify recorded promiscuous_interfaces are actually promiscuous
+        for pi in prom_ifaces:
+            p = run([ip_bin, "-o", "link", "show", pi])
+            if p.returncode != 0:
+                print(f"ERROR: promiscuous interface {pi} not present", file=sys.stderr)
+                failures += 1
+                continue
+            if "PROMISC" in p.stdout:
+                print(f"Interface {pi} is in promiscuous mode")
+            else:
+                print(f"ERROR: Interface {pi} is NOT in promiscuous mode", file=sys.stderr)
                 failures += 1
 
     if failures == 0:
