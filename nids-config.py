@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
     'ipv4_enabled': True,
     'ipv6_enabled': True,
     'interfaces': [],
+    'promiscuous_interfaces': [],
     'last_updated': None
 }
 
@@ -115,22 +116,95 @@ class NIDSConfig:
         return False
     
     def enable_ipv4(self):
-        """Enable IPv4 monitoring (updates config only). Kernel-level toggling for IPv4 is not supported."""
-        print("Note: IPv4 kernel-level enable/disable is not supported by this tool. Updating config only.")
+        """Enable IPv4 monitoring and bring interfaces up if they are down."""
+        # Ensure we have sufficient permissions to manipulate interfaces
+        if not check_permissions():
+            return False
+
+        print("Note: IPv4 kernel-level disable is not supported by this tool; bringing interfaces UP where possible and updating config.")
+        # Enumerate all non-loopback interfaces and bring up those that are down
+        all_ifaces = [i for i in os.listdir('/sys/class/net') if i != 'lo']
+        brought_up = []
+        already_up = []
+        down_failed = []
+
+        for iface in all_ifaces:
+            try:
+                if NetworkInterface.is_interface_up(iface):
+                    already_up.append(iface)
+                else:
+                    if NetworkInterface.bring_up_interface(iface):
+                        brought_up.append(iface)
+                    else:
+                        down_failed.append(iface)
+            except Exception as e:
+                down_failed.append(iface)
+                print(f"Warning: error checking/bringing up {iface}: {e}", file=sys.stderr)
+
+        # Update config to reflect interfaces that are now up
+        up_ifaces = sorted(set(already_up + brought_up))
         self.config['ipv4_enabled'] = True
-        if self.save_config():
+        self.config['interfaces'] = up_ifaces
+        saved = self.save_config()
+
+        # Report results
+        if brought_up:
+            print(f"✓ Brought up interfaces: {', '.join(brought_up)}")
+        if already_up:
+            print(f"✓ Interfaces already up: {', '.join(already_up)}")
+        if down_failed:
+            print(f"Warning: failed to bring up: {', '.join(down_failed)}", file=sys.stderr)
+
+        if saved:
             print("✓ IPv4 monitoring enabled (config updated)")
             return True
         return False
     
-    def disable_ipv4(self):
-        """Disable IPv4 monitoring (updates config only). Kernel-level toggling for IPv4 is not supported."""
-        print("Note: IPv4 kernel-level enable/disable is not supported by this tool. Updating config only.")
-        self.config['ipv4_enabled'] = False
-        if self.save_config():
-            print("✓ IPv4 monitoring disabled (config updated)")
+    def set_promiscuous(self, for_ipv4=False, for_ipv6=False, interfaces=None):
+        """Set promiscuous mode on interfaces and record results in config.
+        for_ipv4/for_ipv6 are informational flags recorded in config."""
+        # Caller should ensure root/permissions
+        if interfaces is None:
+            interfaces = NetworkInterface.get_active_interfaces()
+        
+        if not interfaces:
+            print("Warning: No interfaces to set promiscuous mode on.", file=sys.stderr)
+            self.config['promiscuous_interfaces'] = []
+            self.save_config()
+            return False
+
+        set_ok = []
+        for iface in interfaces:
+            if NetworkInterface.enable_promiscuous_mode(iface):
+                set_ok.append(iface)
+            else:
+                print(f"Warning: failed to set promiscuous on {iface}", file=sys.stderr)
+
+        # Update config with discovered interfaces and which were set
+        self.config['interfaces'] = interfaces
+        self.config['promiscuous_interfaces'] = set_ok
+        self.config['promiscuous_for_ipv4'] = bool(for_ipv4)
+        self.config['promiscuous_for_ipv6'] = bool(for_ipv6)
+        self.save_config()
+
+        if set_ok:
+            print(f"✓ Promiscuous mode enabled on: {', '.join(set_ok)}")
             return True
+        print("✗ No interfaces were set to promiscuous mode", file=sys.stderr)
         return False
+
+    def set_prom_ipv6(self, interfaces=None):
+        """Ensure IPv6 enabled in config and set promiscuous mode for IPv6 workflows."""
+        # Mark config intent
+        self.config['ipv6_enabled'] = True
+        self.save_config()
+        return self.set_promiscuous(for_ipv6=True, interfaces=interfaces)
+
+    def set_prom_ipv4(self, interfaces=None):
+        """Ensure IPv4 enabled in config and set promiscuous mode for IPv4 workflows."""
+        self.config['ipv4_enabled'] = True
+        self.save_config()
+        return self.set_promiscuous(for_ipv4=True, interfaces=interfaces)
     
     def get_status(self):
         """Get current configuration status"""
@@ -138,6 +212,7 @@ class NIDSConfig:
             'ipv4': 'ENABLED' if self.config.get('ipv4_enabled', True) else 'DISABLED',
             'ipv6': 'ENABLED' if self.config.get('ipv6_enabled', True) else 'DISABLED',
             'interfaces': self.config.get('interfaces', []),
+            'promiscuous_interfaces': self.config.get('promiscuous_interfaces', []),
             'last_updated': self.config.get('last_updated', 'Never')
         }
 
@@ -220,6 +295,41 @@ class NetworkInterface:
         except Exception:
             return False
 
+    @staticmethod
+    def is_interface_up(interface):
+        """Return True if interface operstate is 'up'."""
+        operstate_path = os.path.join('/sys/class/net', interface, 'operstate')
+        try:
+            with open(operstate_path, 'r') as f:
+                return f.read().strip() == 'up'
+        except Exception:
+            return False
+
+    @staticmethod
+    def bring_up_interface(interface):
+        """Bring an interface up using ip link set dev <iface> up."""
+        try:
+            # ensure ip exists
+            subprocess.run(['ip', '--version'], capture_output=True, check=True)
+        except FileNotFoundError:
+            print("Error: 'ip' command not found. Please install iproute2.", file=sys.stderr)
+            return False
+        except subprocess.CalledProcessError:
+            # ip present but --version failed; continue attempting
+            pass
+
+        try:
+            subprocess.run(['ip', 'link', 'set', interface, 'up'], check=True, capture_output=True)
+            return True
+        except subprocess.CalledProcessError as e:
+            # print short error for debugging
+            err = (e.stderr or e.stdout or b'').decode('utf-8', errors='replace') if isinstance(e.stderr, (bytes, bytearray)) else (e.stderr or e.stdout)
+            print(f"Error bringing up interface {interface}: {err}", file=sys.stderr)
+            return False
+        except Exception as e:
+            print(f"Error bringing up interface {interface}: {e}", file=sys.stderr)
+            return False
+
 
 def check_permissions():
     """Check if running with sufficient permissions"""
@@ -248,6 +358,7 @@ def print_status(nids_config):
     
     print(f"\nActive Network Interfaces: {', '.join(interfaces) if interfaces else 'None'}")
     print(f"Configured Interfaces: {', '.join(status['interfaces']) if status['interfaces'] else 'None'}")
+    print(f"Promiscuous Interfaces: {', '.join(status['promiscuous_interfaces']) if status['promiscuous_interfaces'] else 'None'}")
     
     if status['interfaces']:
         print(f"\nInterface Status:")
@@ -262,31 +373,42 @@ def print_status(nids_config):
 
 
 def configure_all_interfaces(nids_config):
-    """Auto-configure all active interfaces"""
+    """Auto-configure all active interfaces, enable IPv4/IPv6 in config, and set promiscuous mode."""
+    # Ensure root for interface/promisc operations
     if not check_permissions():
         return False
     
+    # Enable IPv4 and IPv6 in config (require kernel IPv6 apply to succeed)
+    nids_config.config['ipv4_enabled'] = True
+    # Attempt kernel IPv6 apply and fail hard if it doesn't succeed
+    if not nids_config._apply_kernel_ipv6(True):
+        print("Error: failed to apply kernel IPv6 enable; aborting.", file=sys.stderr)
+        return False
+    nids_config.config['ipv6_enabled'] = True
+    nids_config.save_config()
+
     interfaces = NetworkInterface.get_active_interfaces()
-    
     if not interfaces:
         print("Warning: No active network interfaces found.", file=sys.stderr)
         return False
-    
+
     print(f"Found {len(interfaces)} active interface(s): {', '.join(interfaces)}")
-    
     success_count = 0
+    prom_ok = []
     for iface in interfaces:
         print(f"\nConfiguring {iface}...", end=" ")
         if NetworkInterface.enable_promiscuous_mode(iface):
             print("✓ Promiscuous mode enabled")
             success_count += 1
+            prom_ok.append(iface)
         else:
             print("✗ Failed")
-    
-    # Update config with all interfaces
+
+    # Update config with results
     nids_config.config['interfaces'] = interfaces
+    nids_config.config['promiscuous_interfaces'] = prom_ok
     nids_config.save_config()
-    
+
     print(f"\n✓ Successfully configured {success_count}/{len(interfaces)} interface(s) for NIDS")
     return success_count > 0
 
@@ -349,9 +471,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --enable-ipv6              Enable IPv6 monitoring (and kernel IPv6)
-  %(prog)s --disable-ipv6             Disable IPv6 monitoring (and kernel IPv6)
-  %(prog)s --configure-all            Auto-configure all interfaces
+  %(prog)s --enable-ipv6              Enable IPv6 monitoring
+  %(prog)s --disable-ipv6             Disable IPv6 monitoring
+  %(prog)s --configure-all            Auto-configure all interfaces and enable IPv4/IPv6 + promiscuous
+  %(prog)s --set-prom-ipv6            Set promiscuous mode for interfaces (ensure ipv6 enabled in config)
+  %(prog)s --set-prom-ipv4            Set promiscuous mode for interfaces (ensure ipv4 enabled in config)
   %(prog)s --status                   Show current configuration
   %(prog)s --validate                 Validate system environment
         """
@@ -364,22 +488,20 @@ Examples:
                        help='Disable IPv6 monitoring')
     parser.add_argument('--enable-ipv4', action='store_true',
                        help='Enable IPv4 monitoring')
-    parser.add_argument('--disable-ipv4', action='store_true',
-                       help='Disable IPv4 monitoring')
+    parser.add_argument('--set-prom-ipv6', action='store_true',
+                       help='Set promiscuous mode on active interfaces for IPv6 workflows (updates config)')
+    parser.add_argument('--set-prom-ipv4', action='store_true',
+                       help='Set promiscuous mode on active interfaces for IPv4 workflows (updates config)')
     
     # Interface options
     parser.add_argument('--configure-all', action='store_true',
-                       help='Auto-configure all active network interfaces')
+                       help='Auto-configure all active network interfaces and enable IPv4/IPv6 and promiscuous')
     
     # Status and validation
     parser.add_argument('--status', action='store_true',
                        help='Show current NIDS configuration status')
     parser.add_argument('--validate', action='store_true',
                        help='Validate system environment for NIDS')
-    
-    # Config file override
-    parser.add_argument('--config', default=CONFIG_FILE,
-                       help=f'Configuration file path (default: {CONFIG_FILE})')
     
     args = parser.parse_args()
     
@@ -389,7 +511,7 @@ Examples:
         sys.exit(0)
     
     # Initialize configuration manager
-    nids_config = NIDSConfig(args.config)
+    nids_config = NIDSConfig()
     
     # Handle commands
     success = True
@@ -406,8 +528,17 @@ Examples:
     if args.enable_ipv4:
         success = nids_config.enable_ipv4() and success
     
-    if args.disable_ipv4:
-        success = nids_config.disable_ipv4() and success
+    if args.set_prom_ipv6:
+        if not check_permissions():
+            success = False
+        else:
+            success = nids_config.set_prom_ipv6() and success
+
+    if args.set_prom_ipv4:
+        if not check_permissions():
+            success = False
+        else:
+            success = nids_config.set_prom_ipv4() and success
     
     if args.configure_all:
         success = configure_all_interfaces(nids_config) and success
