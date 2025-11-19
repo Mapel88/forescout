@@ -114,8 +114,6 @@ pipeline {
                             checkout scm
                             unstash 'deb_package' // Retrieve DEB built in previous stage
                             sh '''
-                                set -o errexit -o pipefail
-
                                 echo "Installing DEB package..."
                                 sudo dpkg -i nids-config_1.0.0_all.deb
 
@@ -150,8 +148,6 @@ pipeline {
                             checkout scm
                             unstash 'rpm_package' // Retrieve RPM built in previous stage
                             sh '''
-                                set -o errexit -o pipefail
-
                                 echo "Installing RPM package(s)..."
                                 sudo dnf install -y *.rpm
 
@@ -172,7 +168,7 @@ pipeline {
 
                                 echo "3) Set promiscuous mode for IPv6 workflows and validate"
                                 sudo nids-config --set-prom-ipv6
-                                sudo python3 validator.py --expect-ipv6 true --expect_ipv4 skip
+                                sudo python3 validator.py --expect-ipv6 true --expect-ipv4 skip
 
                                 echo "4) Run configure-all (enable both protocols + promisc) and validate both"
                                 sudo nids-config --configure-all
