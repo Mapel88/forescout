@@ -3,7 +3,6 @@ services:
   ubuntu-agent:
     build:
       context: ./ubuntu-agent
-      # dockerfile: dockerFile
     image: ubuntu-agent:latest
     container_name: ubuntu-agent
     volumes:
@@ -14,7 +13,6 @@ services:
   rhel-agent:
     build:
       context: ./alma-agent
-      # dockerfile: dockerFile
     image: rhel-agent:latest
     container_name: rhel-agent
     volumes:
