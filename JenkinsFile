@@ -107,87 +107,78 @@ pipeline {
             stage('Test Validation') {
                 parallel {
                     
-                    // 🧪 Test 1: Validate DEB package on Ubuntu agent (Native Test)
-                    stage('Test: Ubuntu Native DEB') {
+                    // 🧪 Test 1: Validate DEB package on Ubuntu agent (IPv4 focused)
+                    stage('Test: Ubuntu IPv4 Validation') {
                         agent { label 'ubuntu-agent' }
                         steps {
                             checkout scm
                             unstash 'deb_package' // Retrieve DEB built in previous stage
                             sh '''
+                                set -o errexit -o pipefail
+
                                 echo "Installing DEB package..."
-                                sudo dpkg -i nids-config_1.0.0_all.deb || true
-                                sudo apt-get update -y || true
+                                sudo dpkg -i nids-config_1.0.0_all.deb
 
                                 # Ensure the installed command is on PATH
                                 if ! command -v nids-config >/dev/null 2>&1; then
                                   if [ -x /usr/bin/nids-config ]; then
-                                    sudo ln -sf /usr/bin/nids-config /usr/local/bin/nids-config || true
+                                    sudo ln -sf /usr/bin/nids-config /usr/local/bin/nids-config
                                   fi
                                 fi
 
-                                echo "1) Disable IPv6 (kernel + config) and validate"
-                                sudo nids-config --disable-ipv6 || true
-                                sudo python3 validator.py --expect-ipv6 false --expect-ipv4 skip
-
-                                echo "2) Enable IPv6 (kernel + config) and validate"
-                                sudo nids-config --enable-ipv6 || true
-                                sudo python3 validator.py --expect-ipv6 true --expect-ipv4 skip
-
-                                echo "3) Disable IPv4 (config-only) and validate"
-                                sudo nids-config --disable-ipv4 || true
-                                sudo python3 validator.py --expect-ipv4 false --expect-ipv6 skip
-
-                                echo "4) Enable IPv4 (config-only) and validate"
-                                sudo nids-config --enable-ipv4 || true
+                                echo "1) Enable IPv4 (bring interfaces up) and validate (config-only change)"
+                                sudo nids-config --enable-ipv4
                                 sudo python3 validator.py --expect-ipv4 true --expect-ipv6 skip
 
-                                echo "5) Run configure-all and validate interfaces recorded/promisc"
-                                sudo nids-config --configure-all || true
-                                sudo python3 validator.py --run-configure-all --expect-ipv4 skip --expect-ipv6 skip
+                                echo "2) Set promiscuous mode for IPv4 workflows and validate"
+                                sudo nids-config --set-prom-ipv4
+                                sudo python3 validator.py --expect-ipv4 true --expect-ipv6 skip
 
-                                echo "Ubuntu validation completed"
+                                echo "3) Run configure-all (enable both protocols + promisc) and validate both"
+                                sudo nids-config --configure-all
+                                sudo python3 validator.py --run-configure-all --expect-ipv4 true --expect-ipv6 true
+
+                                echo "Ubuntu IPv4 validation completed"
                             '''
                         }
                     }
                     
-                    // 🧪 Test 2: Validate RPM package on RHEL agent (Native Test)
-                    stage('Test: RHEL Native RPM') {
+                    // 🧪 Test 2: Validate RPM package on RHEL agent (IPv6 focused)
+                    stage('Test: RHEL IPv6 Validation') {
                         agent { label 'rhel-agent' }
                         steps {
                             checkout scm
                             unstash 'rpm_package' // Retrieve RPM built in previous stage
                             sh '''
+                                set -o errexit -o pipefail
+
                                 echo "Installing RPM package(s)..."
-                                sudo dnf install -y *.rpm || true
+                                sudo dnf install -y *.rpm
 
                                 # Ensure the installed command is on PATH
                                 if ! command -v nids-config >/dev/null 2>&1; then
                                   if [ -x /usr/bin/nids-config ]; then
-                                    sudo ln -sf /usr/bin/nids-config /usr/local/bin/nids-config || true
+                                    sudo ln -sf /usr/bin/nids-config /usr/local/bin/nids-config
                                   fi
                                 fi
 
                                 echo "1) Disable IPv6 (kernel + config) and validate"
-                                sudo nids-config --disable-ipv6 || true
+                                sudo nids-config --disable-ipv6
                                 sudo python3 validator.py --expect-ipv6 false --expect-ipv4 skip
 
                                 echo "2) Enable IPv6 (kernel + config) and validate"
-                                sudo nids-config --enable-ipv6 || true
+                                sudo nids-config --enable-ipv6
                                 sudo python3 validator.py --expect-ipv6 true --expect-ipv4 skip
 
-                                echo "3) Disable IPv4 (config-only) and validate"
-                                sudo nids-config --disable-ipv4 || true
-                                sudo python3 validator.py --expect-ipv4 false --expect-ipv6 skip
+                                echo "3) Set promiscuous mode for IPv6 workflows and validate"
+                                sudo nids-config --set-prom-ipv6
+                                sudo python3 validator.py --expect-ipv6 true --expect_ipv4 skip
 
-                                echo "4) Enable IPv4 (config-only) and validate"
-                                sudo nids-config --enable-ipv4 || true
-                                sudo python3 validator.py --expect-ipv4 true --expect-ipv6 skip
+                                echo "4) Run configure-all (enable both protocols + promisc) and validate both"
+                                sudo nids-config --configure-all
+                                sudo python3 validator.py --run-configure-all --expect-ipv4 true --expect-ipv6 true
 
-                                echo "5) Run configure-all and validate interfaces recorded/promisc"
-                                sudo nids-config --configure-all || true
-                                sudo python3 validator.py --run-configure-all --expect-ipv4 skip --expect-ipv6 skip
-
-                                echo "RHEL validation completed"
+                                echo "RHEL IPv6 validation completed"
                             '''
                         }
                     }
