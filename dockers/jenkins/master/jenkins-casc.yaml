@@ -12,7 +12,7 @@ credentials:
     - credentials:
       - usernamePassword:
           id: "4caed40b-5d9a-401c-bbb9-2fd5673b07ee"
-          password: "{AQAAABAAAAAwjCVx82PojiP+hawE8LuNSQwgier8ycyZl/9Y6609LihGJAx0T30++wtemprIxqI2xkCXYOctBK5bhrso/yr13w==}"
+          password: "{AQAAABAAAAAwaCIgvIEdV+fGkXLMOGnD/M4GOo307o+/Qzmnuqmm5Iwm35LByMfpjplHXwnSvNBmenhNtOVQRQ9GpqhPoPYboQ==}"
           scope: GLOBAL
           username: "mapel88"
       domain: {
@@ -35,10 +35,15 @@ jenkins:
       templates:
       - connector: "attach"
         dockerTemplateBase:
+          capabilitiesToAdd:
+          - "NET_ADMIN"
+          - "NET_RAW"
+          capabilitiesToAddString: |-
+            NET_ADMIN
+            NET_RAW
           cpuPeriod: 0
           cpuQuota: 0
           image: "ubuntu-agent:latest"
-          # privileged: true
         labelString: "ubuntu-agent"
         name: "ubuntu"
         pullStrategy: PULL_NEVER
@@ -50,7 +55,7 @@ jenkins:
           cpuPeriod: 0
           cpuQuota: 0
           image: "rhel-agent:latest"
-          # privileged: true
+          privileged: true
         labelString: "rhel-agent"
         mode: EXCLUSIVE
         name: "rhel"
@@ -63,7 +68,10 @@ jenkins:
   disableRememberMe: false
   labelAtoms:
   - name: "built-in"
+  - name: "rhel-000101nr4yg2j"
   - name: "rhel-agent"
+  - name: "ubuntu-000100iemuf3e"
+  - name: "ubuntu-000101nqvj26y"
   - name: "ubuntu-agent"
   log: {
     }
