@@ -12,7 +12,7 @@ credentials:
     - credentials:
       - usernamePassword:
           id: "4caed40b-5d9a-401c-bbb9-2fd5673b07ee"
-          password: "{AQAAABAAAAAwaCIgvIEdV+fGkXLMOGnD/M4GOo307o+/Qzmnuqmm5Iwm35LByMfpjplHXwnSvNBmenhNtOVQRQ9GpqhPoPYboQ==}"
+          password: "{AQAAABAAAAAwNIuG+cY1RgrbUzqJX69hFdZp8su5y117Wvq7nhrl6RnbSDMB+kGKYflEUvi9xvplzngCos3q+VdBvzyAkraPQA==}"
           scope: GLOBAL
           username: "mapel88"
       domain: {
@@ -68,10 +68,7 @@ jenkins:
   disableRememberMe: false
   labelAtoms:
   - name: "built-in"
-  - name: "rhel-000101nr4yg2j"
   - name: "rhel-agent"
-  - name: "ubuntu-000100iemuf3e"
-  - name: "ubuntu-000101nqvj26y"
   - name: "ubuntu-agent"
   log: {
     }
