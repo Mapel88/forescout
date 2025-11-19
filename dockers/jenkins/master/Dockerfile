@@ -21,7 +21,7 @@ RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
 
 # Copy the JCasC configuration
 COPY jenkins-casc.yaml /usr/share/jenkins/ref/casc.yaml
-ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
+ENV CASC_JENKINS_CONFIG=/usr/share/jenkins/ref/casc.yaml
 
 
 USER jenkins
