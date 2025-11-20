@@ -1,309 +1,87 @@
-configuration-as-code: {
-  }
+# jenkins-casc.yaml (Simplified and Corrected)
+
+# --- CREDENTIALS ---
 credentials:
-  blueOcean: {
-    }
-  folder: {
-    }
-  providerImpl: {
-    }
+  # The system block is correct for defining a Username/Password credential
   system:
     domainCredentials:
-    - credentials:
-      - usernamePassword:
-          id: "4caed40b-5d9a-401c-bbb9-2fd5673b07ee"
-          password: "{AQAAABAAAAAwNIuG+cY1RgrbUzqJX69hFdZp8su5y117Wvq7nhrl6RnbSDMB+kGKYflEUvi9xvplzngCos3q+VdBvzyAkraPQA==}"
-          scope: GLOBAL
-          username: "mapel88"
-      domain: {
-        }
-  user: {
-    }
+      - credentials:
+          - usernamePassword:
+              id: "4caed40b-5d9a-401c-bbb9-2fd5673b07ee"
+              password: "{AQAAABAAAAAwNIuG+cY1RgrbUzqJX69hFdZp8su5y117Wvq7nhrl6RnbSDMB+kGKYflEUvi9xvplzngCos3q+VdBvzyAkraPQA==}"
+              scope: GLOBAL
+              username: "mapel88"
+        domain:
+          name: "global"
+# --- JENKINS CORE CONFIGURATION ---
 jenkins:
-  authorizationStrategy:
-    loggedInUsersCanDoAnything:
-      allowAnonymousRead: false
-  clouds:
-  - docker:
-      dockerApi:
-        connectTimeout: 60
-        dockerHost:
-          uri: "unix:///var/run/docker.sock"
-        readTimeout: 60
-      exposeDockerHost: true
-      name: "docker-agents"
-      templates:
-      - connector: "attach"
-        dockerTemplateBase:
-          capabilitiesToAdd:
-          - "NET_ADMIN"
-          - "NET_RAW"
-          capabilitiesToAddString: |-
-            NET_ADMIN
-            NET_RAW
-          cpuPeriod: 0
-          cpuQuota: 0
-          image: "ubuntu-agent:latest"
-        labelString: "ubuntu-agent"
-        name: "ubuntu"
-        pullStrategy: PULL_NEVER
-        pullTimeout: 300
-        remoteFs: "/jenkins-workspace"
-        removeVolumes: true
-      - connector: "attach"
-        dockerTemplateBase:
-          cpuPeriod: 0
-          cpuQuota: 0
-          image: "rhel-agent:latest"
-          privileged: true
-        labelString: "rhel-agent"
-        mode: EXCLUSIVE
-        name: "rhel"
-        pullStrategy: PULL_NEVER
-        pullTimeout: 300
-        remoteFs: "/jenkins-workspace"
-  crumbIssuer:
-    standard:
-      excludeClientIPFromCrumb: false
-  disableRememberMe: false
-  labelAtoms:
-  - name: "built-in"
-  - name: "rhel-agent"
-  - name: "ubuntu-agent"
-  log: {
-    }
-  markupFormatter: "plainText"
-  mode: NORMAL
-  nodeMonitors:
-  - "architecture"
-  - "clock"
-  - diskSpace:
-      freeSpaceThreshold: "1GiB"
-      freeSpaceWarningThreshold: "2GiB"
-  - "swapSpace"
-  - tmpSpace:
-      freeSpaceThreshold: "1GiB"
-      freeSpaceWarningThreshold: "2GiB"
-  - "responseTime"
-  numExecutors: 2
-  primaryView:
-    all:
-      name: "all"
-  projectNamingStrategy: "standard"
-  quietPeriod: 5
-  remotingSecurity:
-    enabled: true
-  scmCheckoutRetryCount: 0
+  # Security Realm and Authorization
   securityRealm:
     local:
       allowsSignup: false
-      enableCaptcha: false
       users:
-      - id: "Admin"
-        name: "Maayan"
-        properties:
-        - "favorite"
-        - theme:
-            theme: "noOp"
-        - "consoleUrlProvider"
-        - "viewsTabBar"
-        - myView:
-            viewsTabBar: "standard"
-        - preferredProvider:
-            providerId: "default"
-        - "timezone"
-        - "experimentalFlags"
-        - mailer:
-            emailAddress: "mapelboim@gmail.com"
-        - "apiToken"
-  slaveAgentPort: 50000
-  updateCenter:
-    sites:
-    - id: "default"
-      url: "https://updates.jenkins.io/update-center.json"
-  views:
-  - all:
-      name: "all"
-  viewsTabBar: "standard"
-globalCredentialsConfiguration:
-  configuration:
-    providerFilter: "none"
-    typeFilter: "none"
-appearance:
-  consoleUrlProvider: {
-    }
-  pipelineGraphView:
-    showGraphOnBuildPage: false
-    showGraphOnJobPage: false
-    showStageDurations: false
-    showStageNames: false
-  prism:
-    theme: PRISM
-  themeManager:
-    disableUserThemes: false
-    theme: "noOp"
-security:
-  apiToken:
-    creationOfLegacyTokenEnabled: false
-    tokenGenerationOnCreationEnabled: false
-    usageStatisticsEnabled: true
-  apiTokenProperty: {
-    }
-  cps:
-    hideSandbox: false
-  crumb: {
-    }
-  gitHooks:
-    allowedOnAgents: false
-    allowedOnController: false
-  gitHostKeyVerificationConfiguration:
-    sshHostKeyVerificationStrategy: "knownHostsFileVerificationStrategy"
-  prism: {
-    }
-  queueItemAuthenticator: {
-    }
-  sSHD:
-    port: -1
-  scriptApproval:
-    forceSandbox: false
-  updateSiteWarningsConfiguration: {
-    }
-unclassified:
-  administrativeMonitorsConfiguration: {
-    }
-  artifactManager: {
-    }
-  bitbucketEndpointConfiguration:
-    endpoints:
-    - bitbucketCloudEndpoint:
-        enableCache: false
-        repositoriesCacheDuration: 0
-        teamCacheDuration: 0
-        webhook:
-          cloudWebhook:
-            enableHookSignature: false
-            manageHooks: false
-  buildDiscarders:
-    configuredBuildDiscarders:
-    - "jobBuildDiscarder"
-  buildStepOperation:
-    enabled: false
-  builtInNode: {
-    }
-  casCGlobalConfig: {
-    }
-  computerRetentionCheckInterval: {
-    }
-  defaultDisplayUrlProvider: {
-    }
-  defaultFolderConfiguration: {
-    }
-  defaultView: {
-    }
-  email-ext:
-    adminRequiredForTemplateTesting: false
-    allowUnregisteredEnabled: false
-    charset: "UTF-8"
-    debugMode: false
-    defaultBody: |-
-      $PROJECT_NAME - Build # $BUILD_NUMBER - $BUILD_STATUS:
+        - id: "Admin"
+          name: "Maayan"
+          password: '#jbcrypt:$2a$10$K2t3Bqw4hR.RIZfPQd9zeekhTHa48PDH3HXAmDpWfjj/5OcJIuj.2'
+          properties:
+            - "favorite"
+            - mailer:
+                emailAddress: "mapelboim@gmail.com"
+            - "apiToken"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
 
-      Check console output at $BUILD_URL to view the results.
-    defaultSubject: "$PROJECT_NAME - Build # $BUILD_NUMBER - $BUILD_STATUS!"
-    defaultTriggerIds:
-    - "hudson.plugins.emailext.plugins.trigger.FailureTrigger"
-    mailAccount: {
-      }
-    maxAttachmentSize: -1
-    maxAttachmentSizeMb: -1
-    precedenceBulk: false
-    throttlingEnabled: false
-    watchingEnabled: false
-  enrichedSummaryConfig:
-    enrichedSummaryEnabled: false
-    httpClientDelayBetweenRetriesInSeconds: 1
-    httpClientMaxRetries: 3
-    httpClientTimeoutInSeconds: 1
-  envVarsFilter: {
-    }
-  fingerprints:
-    fingerprintCleanupDisabled: false
-    storage: "file"
-  gitHubConfiguration:
-    apiRateLimitChecker: ThrottleForNormalize
-  gitHubPluginConfig:
-    hookUrl: "http://localhost:8080/github-webhook/"
-  globalDefaultFlowDurabilityLevel: {
-    }
-  globalLibraries: {
-    }
-  globalTimeOutConfiguration:
-    operations:
-    - "abortOperation"
-    overwriteable: false
-  globalUntrustedLibraries: {
-    }
-  injectionConfig:
-    allowUntrusted: false
-    checkForBuildAgentErrors: false
-    enabled: false
-    enforceUrl: false
-    injectCcudExtension: false
-    injectMavenExtension: false
-  junitTestResultStorage:
-    storage: "file"
-  location:
-    adminAddress: "address not configured yet <nobody@nowhere>"
-    url: "http://localhost:8080/"
-  mailer:
-    charset: "UTF-8"
-    useSsl: false
-    useTls: false
-  metricsAccessKey: {
-    }
-  myView: {
-    }
-  nodeProperties: {
-    }
-  pipeline-model-docker: {
-    }
-  plugin: {
-    }
-  pollSCM:
-    pollingThreadCount: 10
-  projectNamingStrategy: {
-    }
-  proxyConfigurationManager: {
-    }
-  quietPeriod: {
-    }
-  resourceRoot: {
-    }
-  scmGit:
-    addGitTagAction: false
-    allowSecondFetch: false
-    createAccountBasedOnEmail: false
-    disableGitToolChooser: false
-    hideCredentials: false
-    showEntireCommitSummaryInChanges: false
-    useExistingAccountWithSameEmail: false
-  scmRetryCount: {
-    }
-  shell: {
-    }
-  timestamper:
-    allPipelines: false
-    elapsedTimeFormat: "'<b>'HH:mm:ss.S'</b> '"
-    systemTimeFormat: "'<b>'HH:mm:ss'</b> '"
-  usageStatistics: {
-    }
-  viewsTabBar: {
-    }
+  # Docker Cloud Configuration (Agents)
+  clouds:
+    - docker:
+        dockerApi:
+          connectTimeout: 60
+          dockerHost:
+            uri: "unix:///var/run/docker.sock"
+          readTimeout: 60
+        name: "docker-agents"
+        templates:
+          - connector: "attach"
+            dockerTemplateBase:
+              # Capabilities needed for NIDS/networking tests
+              capabilitiesToAdd:
+                - "NET_ADMIN"
+                - "NET_RAW"
+              image: "ubuntu-agent:latest"
+            labelString: "ubuntu-agent"
+            pullStrategy: PULL_NEVER
+            remoteFs: "/jenkins-workspace"
+            removeVolumes: true
+          - connector: "attach"
+            dockerTemplateBase:
+              image: "rhel-agent:latest"
+              privileged: true # Required for sysctl/kernel changes
+            labelString: "rhel-agent"
+            mode: EXCLUSIVE
+            pullStrategy: PULL_NEVER
+            remoteFs: "/jenkins-workspace"
+            removeVolumes: true # Added for consistency
+
+  # Core Settings
+  numExecutors: 2
+  slaveAgentPort: 50000
+  quietPeriod: 5
+  markupFormatter: "plainText" # Should be safe since it's the default/basic
+  
+# --- TOOLS ---
 tool:
   git:
     installations:
-    - home: "git"
-      name: "Default"
-  mavenGlobalConfig:
-    globalSettingsProvider: "standard"
-    settingsProvider: "standard"
+      - home: "git" # Assumes 'git' is available on PATH of controller or agent (it is in your Dockerfile)
+        name: "Default"
+
+# --- UNCLASSIFIED (Cleaned) ---
+unclassified:
+  location:
+    adminAddress: "mapelboim@gmail.com"
+    url: "http://localhost:8080/"
+
+# --- JOB DSL DEFINITION ---
+jobs:
+  - file: /usr/share/jenkins/ref/jobs/nids-pipeline.groovy
