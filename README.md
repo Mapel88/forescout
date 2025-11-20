@@ -4,7 +4,7 @@ Lightweight repository that builds and validates a small NIDS configuration CLI 
 and provides a local Jenkins instance for building/testing using Docker-based agents.
 
 ## Prerequisites
-- Docker Desktop (with Docker Compose)
+- Docker Desktop installed and running (with Docker Compose)
 - git (for checking out repo)
 - On agents / test hosts: python3, iproute2 (ip), procps (sysctl), PyYAML (packaged or pip install PyYAML)
 
