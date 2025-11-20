@@ -2,7 +2,7 @@
 services:
   jenkins-master:
     build:
-      context: ./jenkins/master
+      context: ./jenkins
     container_name: jenkins-master
     user: root
     ports:
