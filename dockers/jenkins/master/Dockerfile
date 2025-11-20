@@ -23,5 +23,12 @@ RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
 COPY jenkins-casc.yaml /usr/share/jenkins/ref/casc.yaml
 ENV CASC_JENKINS_CONFIG=/usr/share/jenkins/ref/casc.yaml
 
+# Copy the Job DSL scripts
+COPY jobs /usr/share/jenkins/ref/jobs/
+
+# Disable the setup wizard
+ENV JAVA_OPTS="-Djenkins.install.runSetupWizard=false"
+
+ENV JENKINS_SKIP_PLUGINS_INSTALLATION="true"
 
 USER jenkins

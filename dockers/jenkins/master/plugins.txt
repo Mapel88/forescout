@@ -8,5 +8,4 @@ docker-plugin
 docker-workflow
 blueocean
 pipeline-stage-view
-Theme Manager
-Dark Theme
+job-dsl
